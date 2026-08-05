@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Labirent PlayStation Cafe - Masa, Adisyon & Kasa Otomasyonu</title>
+    <title>Labirent PlayStation Cafe - Bulut Sistemli</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -28,6 +28,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js for Reports -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- FIREBASE SDK v8 COMPAT (Bulut Veritabanı İçin Zorunlu Kütüphaneler) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
         body {
@@ -126,13 +131,13 @@
         <!-- Alt Kullanıcı/Durum Bilgisi -->
         <div class="p-4 border-t border-slate-800 shrink-0">
             <div class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-                    <i class="fa-regular fa-user"></i>
+                <div class="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                    <i class="fa-solid fa-cloud"></i>
                 </div>
                 <div>
-                    <div class="text-xs font-bold text-white">Yönetici Paneli</div>
+                    <div class="text-xs font-bold text-white">Bulut Bağlantısı</div>
                     <div class="text-[10px] text-emerald-400 flex items-center gap-1.5 mt-0.5">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Sistem Aktif
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Senkronize Ediliyor
                     </div>
                 </div>
             </div>
@@ -1260,6 +1265,22 @@
 
     <!-- ================= JAVASCRIPT APP CODE ================= -->
     <script>
+        /* ================= FIREBASE CONFIG ================= */
+        const firebaseConfig = {
+            apiKey: "AIzaSyDFd6vF8IKwdTzc5FPZX7YURdXTWuQzK9Q",
+            authDomain: "labirentpsapp.firebaseapp.com",
+            databaseURL: "https://labirentpsapp-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "labirentpsapp",
+            storageBucket: "labirentpsapp.firebasestorage.app",
+            messagingSenderId: "121003346386",
+            appId: "1:121003346386:web:a475d58969c35684c5e00b",
+            measurementId: "G-55P0WX197V"
+        };
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+
         /* ================= UI LAYOUT ================= */
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -1349,16 +1370,34 @@
             viewMode: 'daily' 
         };
 
-        /* ================= INITIALIZATION & LOCAL STORAGE ================= */
+        /* ================= INITIALIZATION & FIREBASE SYNC ================= */
         window.onload = function() {
-            loadFromLocalStorage();
             initializeClock();
-            renderAll();
-            
+            loadFromFirebase();
             setInterval(tick, 1000);
         };
 
-        function loadFromLocalStorage() {
+        function loadFromFirebase() {
+            // Veritabanı dinleyicisi (Her değişiklikte anında çalışır)
+            database.ref('labirent_data').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    state.settings = data.settings || { ...DEFAULT_SETTINGS };
+                    state.tables = data.tables || [ ...DEFAULT_TABLES ];
+                    state.products = data.products || [];
+                    state.expenses = data.expenses || [];
+                    state.history = data.history || [];
+                    state.rentals = data.rentals || [];
+                    
+                    renderAll();
+                } else {
+                    // Firebase boş. Eski veriler varsa al ve Firebase'e aktar.
+                    migrateFromLocalStorage();
+                }
+            });
+        }
+
+        function migrateFromLocalStorage() {
             const savedSettings = localStorage.getItem('lab_v2_settings');
             const savedTables = localStorage.getItem('lab_v2_tables');
             const savedProducts = localStorage.getItem('lab_v2_products');
@@ -1366,21 +1405,32 @@
             const savedHistory = localStorage.getItem('lab_v2_history');
             const savedRentals = localStorage.getItem('lab_v2_rentals');
 
-            if (savedSettings) state.settings = JSON.parse(savedSettings);
-            if (savedTables) state.tables = JSON.parse(savedTables);
-            if (savedProducts) state.products = JSON.parse(savedProducts);
-            if (savedExpenses) state.expenses = JSON.parse(savedExpenses);
-            if (savedHistory) state.history = JSON.parse(savedHistory);
-            if (savedRentals) state.rentals = JSON.parse(savedRentals);
+            let hasLocalData = savedSettings || savedTables || savedProducts || savedExpenses || savedHistory || savedRentals;
+
+            if (hasLocalData) {
+                if (savedSettings) state.settings = JSON.parse(savedSettings);
+                if (savedTables) state.tables = JSON.parse(savedTables);
+                if (savedProducts) state.products = JSON.parse(savedProducts);
+                if (savedExpenses) state.expenses = JSON.parse(savedExpenses);
+                if (savedHistory) state.history = JSON.parse(savedHistory);
+                if (savedRentals) state.rentals = JSON.parse(savedRentals);
+                
+                showToast('Eski yerel verileriniz başarıyla buluta aktarıldı!', 'success');
+            } else {
+                state.settings = { ...DEFAULT_SETTINGS };
+                state.tables = JSON.parse(JSON.stringify(DEFAULT_TABLES));
+                state.products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+                state.expenses = [];
+                state.history = [];
+                state.rentals = [];
+            }
+            
+            saveToFirebase();
+            renderAll();
         }
 
-        function saveToLocalStorage() {
-            localStorage.setItem('lab_v2_settings', JSON.stringify(state.settings));
-            localStorage.setItem('lab_v2_tables', JSON.stringify(state.tables));
-            localStorage.setItem('lab_v2_products', JSON.stringify(state.products));
-            localStorage.setItem('lab_v2_expenses', JSON.stringify(state.expenses));
-            localStorage.setItem('lab_v2_history', JSON.stringify(state.history));
-            localStorage.setItem('lab_v2_rentals', JSON.stringify(state.rentals));
+        function saveToFirebase() {
+            database.ref('labirent_data').set(state);
         }
 
         /* ================= CALCULATION LOGIC ================= */
@@ -1472,7 +1522,7 @@
                 }
             });
 
-            if (stateUpdated) saveToLocalStorage();
+            if (stateUpdated) saveToFirebase();
         }
 
         function formatTime(totalSeconds) {
@@ -1750,9 +1800,8 @@
             table.alarmTriggered = false;
             table.isPrepaid = isPrepaid;
 
-            saveToLocalStorage();
+            saveToFirebase();
             closeModal('modal-start-table');
-            renderAll();
             showToast(isPrepaid ? `${table.name} başlatıldı (${prepaidAmount} TL peşin alındı).` : `${table.name} başlatıldı.`, 'success');
         }
 
@@ -1812,9 +1861,7 @@
                 });
             }
 
-            saveToLocalStorage();
-            renderCurrentTableOrders(table);
-            renderTables();
+            saveToFirebase();
             showToast(`${product.name} adisyona eklendi.`, 'info');
         }
 
@@ -1830,9 +1877,7 @@
                 table.orders = table.orders.filter(o => o.productId !== productId);
             }
 
-            saveToLocalStorage();
-            renderCurrentTableOrders(table);
-            renderTables();
+            saveToFirebase();
         }
 
         function renderCurrentTableOrders(table) {
@@ -1979,9 +2024,8 @@
             table.orders = [];
             table.alarmTriggered = false;
 
-            saveToLocalStorage();
+            saveToFirebase();
             closeModal('modal-checkout');
-            renderAll();
             showToast(`${table.name} ücretsiz olarak kapatıldı.`, 'info');
         }
 
@@ -2072,9 +2116,8 @@
             table.orders = [];
             table.alarmTriggered = false;
 
-            saveToLocalStorage();
+            saveToFirebase();
             closeModal('modal-checkout');
-            renderAll();
             showToast(`${table.name} adisyonu kapatıldı (${paymentMethod.toUpperCase()}: ${actualTotalAmount.toFixed(2)} TL)`, 'success');
         }
 
@@ -2108,16 +2151,14 @@
             };
 
             state.products.push(newProduct);
-            saveToLocalStorage();
+            saveToFirebase();
             document.getElementById('product-form').reset();
-            renderProducts();
             showToast(`${name} menüye eklendi.`, 'success');
         }
 
         function deleteProduct(id) {
             state.products = state.products.filter(p => p.id !== id);
-            saveToLocalStorage();
-            renderProducts();
+            saveToFirebase();
             showToast('Ürün silindi.', 'info');
         }
 
@@ -2156,9 +2197,8 @@
             p.margin = parseFloat(document.getElementById('edit-prod-margin').value) || 0;
             p.price = parseFloat(document.getElementById('edit-prod-price').value) || 0;
 
-            saveToLocalStorage();
+            saveToFirebase();
             closeModal('modal-edit-product');
-            renderProducts();
             showToast('Ürün başarıyla güncellendi.', 'success');
         }
 
@@ -2211,19 +2251,15 @@
                 date
             });
 
-            saveToLocalStorage();
+            saveToFirebase();
             document.getElementById('expense-form').reset();
             document.getElementById('expense-date').valueAsDate = new Date();
-            renderExpenses();
-            renderReports();
             showToast('Gider kaydedildi.', 'success');
         }
 
         function deleteExpense(id) {
             state.expenses = state.expenses.filter(e => e.id !== id);
-            saveToLocalStorage();
-            renderExpenses();
-            renderReports();
+            saveToFirebase();
             showToast('Gider silindi.', 'info');
         }
 
@@ -2279,9 +2315,8 @@
                 dateAdded: new Date().toLocaleDateString('tr-TR')
             });
 
-            saveToLocalStorage();
+            saveToFirebase();
             document.getElementById('rental-form').reset();
-            renderRentals();
             showToast('Kiralama kaydedildi.', 'success');
         }
 
@@ -2319,8 +2354,7 @@
         function deleteRental(id) {
             if (confirm('Bu kiralamayı silmek istediğinize emin misiniz? (Kasaya işlenmeyecektir)')) {
                 state.rentals = state.rentals.filter(r => r.id !== id);
-                saveToLocalStorage();
-                renderRentals();
+                saveToFirebase();
                 showToast('Kiralama iptal edildi/silindi.', 'info');
             }
         }
@@ -2403,9 +2437,8 @@
             // Kiralamayı listeden çıkar
             state.rentals = state.rentals.filter(r => r.id !== id);
             
-            saveToLocalStorage();
+            saveToFirebase();
             closeModal('modal-rental-checkout');
-            renderAll();
             showToast('Kiralama teslim alındı ve kasaya işlendi.', 'success');
         }
 
@@ -3015,8 +3048,7 @@
         function clearHistory() {
             if (confirm('Tüm adisyon geçmişini silmek istediğinize emin misiniz?')) {
                 state.history = [];
-                saveToLocalStorage();
-                renderReports();
+                saveToFirebase();
                 showToast('Adisyon geçmişi temizlendi.', 'info');
             }
         }
@@ -3025,8 +3057,7 @@
             if (index < 0 || index >= state.history.length) return;
             if (confirm('Bu adisyon kaydını silmek istediğinize emin misiniz? (İlgili tutar kasadan ve raporlardan düşülecektir)')) {
                 state.history.splice(index, 1);
-                saveToLocalStorage();
-                renderReports();
+                saveToFirebase();
                 showToast('Adisyon kaydı silindi ve bakiye güncellendi.', 'info');
             }
         }
@@ -3190,23 +3221,20 @@
 
             state.settings.pingpongRate = parseFloat(document.getElementById('cfg-pingpong-rate').value);
 
-            saveToLocalStorage();
-            renderAll();
+            saveToFirebase();
             showToast('Ayarlar ve tarifeler kaydedildi.', 'success');
             switchTab('tables');
         }
 
         function resetAllAppSystem() {
             if (confirm('Tüm verileri silip fabrika ayarlarına dönmek istediğinize emin misiniz?')) {
-                localStorage.clear();
                 state.settings = { ...DEFAULT_SETTINGS };
                 state.tables = JSON.parse(JSON.stringify(DEFAULT_TABLES));
                 state.products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
                 state.expenses = [];
                 state.history = [];
                 state.rentals = [];
-                saveToLocalStorage();
-                renderAll();
+                saveToFirebase();
                 renderSettingsForm();
                 showToast('Sistem tamamen sıfırlandı.', 'info');
             }
@@ -3331,8 +3359,7 @@
                 source.alarmTriggered = false;
                 source.isPrepaid = false;
 
-                saveToLocalStorage();
-                renderTables();
+                saveToFirebase();
                 showToast(`Hesap ${target.name} masasına taşındı.`, 'success');
             }
         }
@@ -3403,9 +3430,8 @@
             table.targetMins += addMins;
             table.alarmTriggered = false;
 
-            saveToLocalStorage();
+            saveToFirebase();
             closeModal('modal-extend-time');
-            renderTables();
             showToast(`${table.name} masasına ${addMins} dk eklendi.`, 'info');
         }
 
@@ -3545,10 +3571,9 @@
                 orders: [...dsCart]
             });
 
-            saveToLocalStorage();
+            saveToFirebase();
             dsCart = [];
             renderDsCart();
-            renderReports();
             showToast(`Hızlı satış tamamlandı (${totalAmount.toFixed(2)} TL).`, 'success');
         }
 
